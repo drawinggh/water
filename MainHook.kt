@@ -1,229 +1,182 @@
 package com.waterdrop.module
 
 import android.content.Context
-import android.view.WindowManager
-import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import android.graphics.*
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import kotlin.math.sin
+import kotlin.random.Random
 
-/**
- * MainHook.kt
- * 
- * ماژول LSPosed برای نمایش افکت قطرات آب روی لاک اسکرین.
- * این فایل روی SystemUI هوک می‌زند و یک Overlay شفاف
- * با انیمیشن قطرات آب اضافه می‌کند.
- *
- * نصب:
- *   1. ماژول را در LSPosed فعال کن
- *   2. Scope را فقط روی com.android.systemui بذار
- *   3. گوشی را ریستارت کن
- */
-class MainHook : IXposedHookLoadPackage {
+class WaterDropOverlay(context: Context) : View(context) {
 
-    companion object {
-        private const val TAG = "WaterDropHook"
-        private const val TARGET_PACKAGE = "com.android.systemui"
-        @Volatile
-        private var overlayAdded = false
-        @Volatile
-        private var overlayView: WaterDropOverlay? = null
+    private val droplets = mutableListOf<Droplet>()
+    private val trails = mutableListOf<Trail>()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val handler = Handler(Looper.getMainLooper())
+    private val random = Random(System.currentTimeMillis())
+
+    init {
+        // مهم: background را شفاف کن
+        setBackgroundColor(Color.TRANSPARENT)
+        setWillNotDraw(false)
+
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(50, 180, 220, 255)
+
+        highlightPaint.style = Paint.Style.FILL
+        highlightPaint.color = Color.argb(220, 255, 255, 255)
+
+        borderPaint.style = Paint.Style.STROKE
+        borderPaint.color = Color.argb(100, 100, 140, 180)
+        borderPaint.strokeWidth = 1.5f
     }
 
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        // فقط روی SystemUI اجرا شود
-        if (lpparam.packageName != TARGET_PACKAGE) return
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        initDroplets(w, h)
+    }
 
-        XposedBridge.log("$TAG: SystemUI detected, starting hooks...")
-
-        // روش ۱: هوک روی lifecycle SystemUI (قابل اعتمادترین روش)
-        try {
-            hookSystemUIApplication(lpparam)
-        } catch (e: Throwable) {
-            XposedBridge.log("$TAG: SystemUIApplication hook failed: ${e.message}")
-        }
-
-        // روش ۲: هوک روی KeyguardViewMediator (برای لاک اسکرین)
-        try {
-            hookKeyguardMediator(lpparam)
-        } catch (e: Throwable) {
-            XposedBridge.log("$TAG: KeyguardMediator hook failed: ${e.message}")
-        }
-
-        // روش ۳: هوک روی StatusBar (fallback)
-        try {
-            hookStatusBar(lpparam)
-        } catch (e: Throwable) {
-            XposedBridge.log("$TAG: StatusBar hook failed: ${e.message}")
+    private fun initDroplets(w: Int, h: Int) {
+        droplets.clear()
+        val count = 80 // کمتر برای performance بهتر
+        repeat(count) {
+            droplets.add(createDroplet(w, h, random.nextFloat() * h))
         }
     }
 
-    /**
-     * هوک روی SystemUIApplication.onCreate
-     * این نقطه مطمئن‌ترین جایی است که Context کامل SystemUI در دسترس است.
-     */
-    private fun hookSystemUIApplication(lpparam: XC_LoadPackage.LoadPackageParam) {
-        val className = "com.android.systemui.SystemUIApplication"
-
-        XposedHelpers.findAndHookMethod(
-            className,
-            lpparam.classLoader,
-            "onCreate",
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val app = param.thisObject as? Context ?: return
-                    // کمی تأخیر تا UI کاملاً آماده شود
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        addWaterOverlay(app)
-                    }, 2000)
-                }
-            }
+    private fun createDroplet(w: Int, h: Int, startY: Float = 0f): Droplet {
+        return Droplet(
+            x = random.nextFloat() * w,
+            y = startY,
+            radius = random.nextFloat() * 10f + 3f,
+            speed = random.nextFloat() * 1.5f + 0.3f,
+            opacity = random.nextFloat() * 0.4f + 0.2f,
+            wobble = random.nextFloat() * 0.5f
         )
-        XposedBridge.log("$TAG: Hooked $className.onCreate")
     }
 
-    /**
-     * هوک روی KeyguardViewMediator.showLocked
-     * وقتی لاک اسکرین نمایش داده می‌شود، قطرات فعال می‌شوند.
-     */
-    private fun hookKeyguardMediator(lpparam: XC_LoadPackage.LoadPackageParam) {
-        val className = "com.android.systemui.keyguard.KeyguardViewMediator"
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
 
-        XposedHelpers.findAndHookMethod(
-            className,
-            lpparam.classLoader,
-            "showLocked",
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    try {
-                        val mediator = param.thisObject
-                        val context = XposedHelpers.callMethod(mediator, "getContext") as? Context
-                            ?: XposedHelpers.getObjectField(mediator, "mContext") as? Context
-                            ?: return
+        // مهم: canvas را پاک نکن، فقط قطرات را بکش
+        // اگر canvas.drawColor(Color.BLACK) بزنی، سیاه می‌شود!
 
-                        if (overlayView != null) {
-                            // فقط visibility را تغییر بده، دوباره add نکن
-                            overlayView?.visibility = android.view.View.VISIBLE
-                        } else {
-                            addWaterOverlay(context)
-                        }
-                    } catch (e: Throwable) {
-                        XposedBridge.log("$TAG: showLocked error: ${e.message}")
-                    }
-                }
-            }
-        )
+        trails.forEach { trail ->
+            drawTrail(canvas, trail)
+        }
 
-        // وقتی لاک اسکرین بسته می‌شود، قطرات را مخفی کن
-        XposedHelpers.findAndHookMethod(
-            className,
-            lpparam.classLoader,
-            "hideLocked",
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    overlayView?.visibility = android.view.View.GONE
-                }
-            }
-        )
-
-        XposedBridge.log("$TAG: Hooked $className.showLocked/hideLocked")
+        droplets.forEach { droplet ->
+            drawDroplet(canvas, droplet)
+        }
     }
 
-    /**
-     * هوک روی StatusBar.makeStatusBarWindow
-     * برای ROMهایی که KeyguardViewMediator متفاوت دارند.
-     */
-    private fun hookStatusBar(lpparam: XC_LoadPackage.LoadPackageParam) {
-        val candidates = listOf(
-            "com.android.systemui.statusbar.phone.StatusBar",
-            "com.android.systemui.statusbar.phone.CentralSurfacesImpl"
-        )
+    private fun drawDroplet(canvas: Canvas, d: Droplet) {
+        val x = d.x
+        val y = d.y
+        val r = d.radius
 
-        for (className in candidates) {
-            try {
-                XposedHelpers.findAndHookMethod(
-                    className,
-                    lpparam.classLoader,
-                    "onStart",
-                    object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            val context = XposedHelpers.getObjectField(param.thisObject, "mContext") as? Context
-                                ?: return
-                            if (!overlayAdded) addWaterOverlay(context)
-                        }
-                    }
+        paint.alpha = (d.opacity * 255).toInt()
+        canvas.drawCircle(x, y, r, paint)
+
+        val gradient = RadialGradient(
+            x - r * 0.3f, y - r * 0.3f,
+            r * 0.8f,
+            intArrayOf(
+                Color.argb(80, 255, 255, 255),
+                Color.argb(20, 100, 150, 200)
+            ),
+            null,
+            Shader.TileMode.CLAMP
+        )
+        paint.shader = gradient
+        canvas.drawCircle(x, y, r, paint)
+        paint.shader = null
+
+        highlightPaint.alpha = 230
+        canvas.drawCircle(x - r * 0.35f, y - r * 0.35f, r * 0.22f, highlightPaint)
+
+        highlightPaint.alpha = 120
+        canvas.drawCircle(x + r * 0.3f, y + r * 0.4f, r * 0.1f, highlightPaint)
+
+        borderPaint.alpha = (d.opacity * 180).toInt()
+        canvas.drawCircle(x, y, r, borderPaint)
+    }
+
+    private fun drawTrail(canvas: Canvas, trail: Trail) {
+        paint.alpha = (trail.opacity * 255).toInt()
+        canvas.drawCircle(trail.x, trail.y, trail.radius, paint)
+    }
+
+    fun startAnimation() {
+        handler.post(object : Runnable {
+            override fun run() {
+                try {
+                    updateDroplets()
+                    invalidate()
+                    handler.postDelayed(this, 16)
+                } catch (e: Throwable) {
+                    // اگر خطا داد، انیمیشن متوقف شود ولی overlay نماند
+                    handler.removeCallbacksAndMessages(null)
+                }
+            }
+        })
+    }
+
+    private fun updateDroplets() {
+        val w = width.toFloat()
+        val h = height.toFloat()
+
+        droplets.forEach { d ->
+            d.y += d.speed
+            d.x += sin(d.y * 0.02f).toFloat() * d.wobble
+
+            if (d.speed > 1.2f && random.nextFloat() > 0.7f) {
+                trails.add(
+                    Trail(
+                        x = d.x + (random.nextFloat() - 0.5f) * 2,
+                        y = d.y - d.radius,
+                        radius = d.radius * 0.4f,
+                        opacity = d.opacity * 0.5f
+                    )
                 )
-                XposedBridge.log("$TAG: Hooked $className.onStart")
-                break
-            } catch (e: Throwable) {
-                // این کلاس در این ROM وجود ندارد، بعدی را امتحان کن
             }
+
+            if (d.y - d.radius > h) {
+                d.y = -d.radius
+                d.x = random.nextFloat() * w
+                d.speed = random.nextFloat() * 1.5f + 0.3f
+            }
+        }
+
+        trails.forEach { it.opacity -= 0.01f }
+        trails.removeAll { it.opacity <= 0 }
+
+        if (trails.size > 150) {
+            trails.subList(0, trails.size - 150).clear()
         }
     }
 
-    /**
-     * اضافه کردن ویوی قطرات آب به WindowManager.
-     * از TYPE_KEYGUARD_DIALOG استفاده می‌شود تا روی لاک اسکرین نمایش داده شود.
-     */
-    private fun addWaterOverlay(context: Context) {
-        if (overlayAdded) return
-
-        try {
-            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-                ?: return
-
-            val overlay = WaterDropOverlay(context)
-
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                // این type اجازه می‌دهد روی لاک اسکرین نمایش داده شود
-                WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG,
-                // FLAG_NOT_FOCUSABLE: فوکوس را نمی‌گیرد
-                // FLAG_NOT_TOUCHABLE: تاچ را مسدود نمی‌کند
-                // FLAG_LAYOUT_IN_SCREEN: کل صفحه را پوشش می‌دهد
-                // FLAG_SHOW_WHEN_LOCKED: روی لاک اسکرین هم نمایش داده می‌شود
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
-                android.graphics.PixelFormat.TRANSLUCENT
-            )
-
-            // برای Android 12+ نیاز به format و alpha
-            params.alpha = 0.95f
-            params.format = android.graphics.PixelFormat.TRANSLUCENT
-
-            wm.addView(overlay, params)
-            overlay.startAnimation()
-
-            overlayView = overlay
-            overlayAdded = true
-
-            XposedBridge.log("$TAG: ✅ Water overlay added successfully")
-        } catch (e: Throwable) {
-            XposedBridge.log("$TAG: ❌ Failed to add overlay: ${e.message}")
-            // fallback با type ساده‌تر
-            try {
-                val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
-                val overlay = WaterDropOverlay(context)
-                val params = WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                    android.graphics.PixelFormat.TRANSLUCENT
-                )
-                wm.addView(overlay, params)
-                overlay.startAnimation()
-                overlayView = overlay
-                overlayAdded = true
-                XposedBridge.log("$TAG: ⚠️ Fallback overlay added (may not show on lock screen)")
-            } catch (e2: Throwable) {
-                XposedBridge.log("$TAG: ❌ Fallback also failed: ${e2.message}")
-            }
-        }
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        handler.removeCallbacksAndMessages(null)
     }
 }
+
+data class Droplet(
+    var x: Float,
+    var y: Float,
+    val radius: Float,
+    var speed: Float,
+    val opacity: Float,
+    val wobble: Float
+)
+
+data class Trail(
+    val x: Float,
+    val y: Float,
+    val radius: Float,
+    var opacity: Float
+)

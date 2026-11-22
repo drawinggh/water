@@ -28,7 +28,6 @@ jobs:
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/drawable
-          mkdir -p app/src/main/res/mipmap-hdpi
           mkdir -p gradle/wrapper
 
       - name: Copy MainHook.kt from root
@@ -65,34 +64,16 @@ jobs:
           GRADLEW
           chmod +x gradlew
 
-      - name: Create build.gradle (root)
+      - name: Create build.gradle (ROOT - FIXED FOR GRADLE 8)
         run: |
           cat > build.gradle << 'EOF'
-          buildscript {
-              ext.kotlin_version = '1.9.22'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.2'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-              }
-          }
-
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
-          tasks.register('clean', Delete) {
-              delete rootProject.buildDir
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
           }
           EOF
 
-      - name: Create settings.gradle
+      - name: Create settings.gradle (REPOSITORY MANAGER)
         run: |
           cat > settings.gradle << 'EOF'
           pluginManagement {
@@ -172,23 +153,19 @@ jobs:
           EOF
 
       - name: Create proguard-rules.pro
-        run: |
-          touch app/proguard-rules.pro
+        run: touch app/proguard-rules.pro
 
       - name: Create AndroidManifest.xml
         run: |
           cat > app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
               <application
                   android:allowBackup="true"
                   android:label="@string/app_name"
                   android:supportsRtl="true"
                   android:theme="@style/Theme.WaterDrop">
-
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
@@ -197,28 +174,16 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
-
-                  <meta-data
-                      android:name="xposedmodule"
-                      android:value="true" />
-                  <meta-data
-                      android:name="xposeddescription"
-                      android:value="Water Droplets on Lock Screen" />
-                  <meta-data
-                      android:name="xposedminversion"
-                      android:value="93" />
-                  <meta-data
-                      android:name="xposedscope"
-                      android:resource="@array/xposed_scope" />
-
+                  <meta-data android:name="xposedmodule" android:value="true" />
+                  <meta-data android:name="xposeddescription" android:value="Water Droplets on Lock Screen" />
+                  <meta-data android:name="xposedminversion" android:value="93" />
+                  <meta-data android:name="xposedscope" android:resource="@array/xposed_scope" />
               </application>
-
           </manifest>
           EOF
 
       - name: Create xposed_init
-        run: |
-          echo "com.waterdrop.module.MainHook" > app/src/main/assets/xposed_init
+        run: echo "com.waterdrop.module.MainHook" > app/src/main/assets/xposed_init
 
       - name: Create strings.xml
         run: |
@@ -255,29 +220,12 @@ jobs:
               android:gravity="center"
               android:orientation="vertical"
               android:padding="32dp">
-
-              <TextView
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:text="💧 Water Droplets Module"
-                  android:textSize="22sp"
-                  android:textStyle="bold" />
-
-              <TextView
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:layout_marginTop="16dp"
-                  android:text="Module Active ✅"
-                  android:textSize="16sp" />
-
-              <TextView
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:layout_marginTop="8dp"
-                  android:text="Enable SystemUI in LSPosed"
-                  android:textSize="14sp"
-                  android:textColor="#888888" />
-
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                  android:text="💧 Water Droplets Module" android:textSize="22sp" android:textStyle="bold" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                  android:layout_marginTop="16dp" android:text="Module Active ✅" android:textSize="16sp" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                  android:layout_marginTop="8dp" android:text="Enable SystemUI in LSPosed" android:textSize="14sp" android:textColor="#888888" />
           </LinearLayout>
           EOF
 
@@ -286,13 +234,8 @@ jobs:
           cat > app/src/main/res/drawable/ic_water.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="24dp"
-              android:height="24dp"
-              android:viewportWidth="24"
-              android:viewportHeight="24">
-              <path
-                  android:fillColor="#2196F3"
-                  android:pathData="M12,2c0,0 -8,9 -8,14c0,4.4 3.6,8 8,8s8,-3.6 8,-8C20,11 12,2 12,2z"/>
+              android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#2196F3" android:pathData="M12,2c0,0 -8,9 -8,14c0,4.4 3.6,8 8,8s8,-3.6 8,-8C20,11 12,2 12,2z"/>
           </vector>
           EOF
 
@@ -300,7 +243,6 @@ jobs:
         run: |
           cat > app/src/main/java/com/waterdrop/module/WaterDropOverlay.kt << 'EOF'
           package com.waterdrop.module
-
           import android.content.Context
           import android.graphics.*
           import android.os.Handler
@@ -310,7 +252,6 @@ jobs:
           import kotlin.random.Random
 
           class WaterDropOverlay(context: Context) : View(context) {
-
               private val droplets = mutableListOf<Droplet>()
               private val trails = mutableListOf<Trail>()
               private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -322,13 +263,10 @@ jobs:
               init {
                   setBackgroundColor(Color.TRANSPARENT)
                   setWillNotDraw(false)
-
                   paint.style = Paint.Style.FILL
                   paint.color = Color.argb(50, 180, 220, 255)
-
                   highlightPaint.style = Paint.Style.FILL
                   highlightPaint.color = Color.argb(220, 255, 255, 255)
-
                   borderPaint.style = Paint.Style.STROKE
                   borderPaint.color = Color.argb(100, 100, 140, 180)
                   borderPaint.strokeWidth = 1.5f
@@ -336,25 +274,17 @@ jobs:
 
               override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                   super.onSizeChanged(w, h, oldw, oldh)
-                  initDroplets(w, h)
-              }
-
-              private fun initDroplets(w: Int, h: Int) {
                   droplets.clear()
                   repeat(80) {
-                      droplets.add(createDroplet(w, h, random.nextFloat() * h))
+                      droplets.add(Droplet(
+                          x = random.nextFloat() * w,
+                          y = random.nextFloat() * h,
+                          radius = random.nextFloat() * 10f + 3f,
+                          speed = random.nextFloat() * 1.5f + 0.3f,
+                          opacity = random.nextFloat() * 0.4f + 0.2f,
+                          wobble = random.nextFloat() * 0.5f
+                      ))
                   }
-              }
-
-              private fun createDroplet(w: Int, h: Int, startY: Float = 0f): Droplet {
-                  return Droplet(
-                      x = random.nextFloat() * w,
-                      y = startY,
-                      radius = random.nextFloat() * 10f + 3f,
-                      speed = random.nextFloat() * 1.5f + 0.3f,
-                      opacity = random.nextFloat() * 0.4f + 0.2f,
-                      wobble = random.nextFloat() * 0.5f
-                  )
               }
 
               override fun onDraw(canvas: Canvas) {
@@ -365,25 +295,17 @@ jobs:
 
               private fun drawDroplet(canvas: Canvas, d: Droplet) {
                   val x = d.x; val y = d.y; val r = d.radius
-
                   paint.alpha = (d.opacity * 255).toInt()
                   canvas.drawCircle(x, y, r, paint)
-
-                  val gradient = RadialGradient(
-                      x - r * 0.3f, y - r * 0.3f, r * 0.8f,
-                      intArrayOf(Color.argb(80, 255, 255, 255), Color.argb(20, 100, 150, 200)),
-                      null, Shader.TileMode.CLAMP
-                  )
+                  val gradient = RadialGradient(x - r * 0.3f, y - r * 0.3f, r * 0.8f,
+                      intArrayOf(Color.argb(80, 255, 255, 255), Color.argb(20, 100, 150, 200)), null, Shader.TileMode.CLAMP)
                   paint.shader = gradient
                   canvas.drawCircle(x, y, r, paint)
                   paint.shader = null
-
                   highlightPaint.alpha = 230
                   canvas.drawCircle(x - r * 0.35f, y - r * 0.35f, r * 0.22f, highlightPaint)
-
                   highlightPaint.alpha = 120
                   canvas.drawCircle(x + r * 0.3f, y + r * 0.4f, r * 0.1f, highlightPaint)
-
                   borderPaint.alpha = (d.opacity * 180).toInt()
                   canvas.drawCircle(x, y, r, borderPaint)
               }
@@ -409,22 +331,18 @@ jobs:
 
               private fun updateDroplets() {
                   val w = width.toFloat(); val h = height.toFloat()
-
                   droplets.forEach { d ->
                       d.y += d.speed
                       d.x += sin(d.y * 0.02f).toFloat() * d.wobble
-
                       if (d.speed > 1.2f && random.nextFloat() > 0.7f) {
                           trails.add(Trail(d.x + (random.nextFloat() - 0.5f) * 2, d.y - d.radius, d.radius * 0.4f, d.opacity * 0.5f))
                       }
-
                       if (d.y - d.radius > h) {
                           d.y = -d.radius
                           d.x = random.nextFloat() * w
                           d.speed = random.nextFloat() * 1.5f + 0.3f
                       }
                   }
-
                   trails.forEach { it.opacity -= 0.01f }
                   trails.removeAll { it.opacity <= 0 }
                   if (trails.size > 150) trails.subList(0, trails.size - 150).clear()
@@ -435,7 +353,6 @@ jobs:
                   handler.removeCallbacksAndMessages(null)
               }
           }
-
           data class Droplet(var x: Float, var y: Float, val radius: Float, var speed: Float, val opacity: Float, val wobble: Float)
           data class Trail(val x: Float, val y: Float, val radius: Float, var opacity: Float)
           EOF
@@ -444,10 +361,8 @@ jobs:
         run: |
           cat > app/src/main/java/com/waterdrop/module/MainActivity.kt << 'EOF'
           package com.waterdrop.module
-
           import android.os.Bundle
           import androidx.appcompat.app.AppCompatActivity
-
           class MainActivity : AppCompatActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -455,11 +370,6 @@ jobs:
               }
           }
           EOF
-
-      - name: Verify structure
-        run: |
-          echo "📁 Structure:"
-          find . -type f -not -path './.git/*' | sort
 
       - name: Build Debug APK
         run: |

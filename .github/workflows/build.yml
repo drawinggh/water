@@ -25,9 +25,7 @@ jobs:
         run: |
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/waterdrop/module
-          mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/drawable
           mkdir -p gradle/wrapper
 
       - name: Copy MainHook.kt
@@ -52,7 +50,6 @@ jobs:
           echo '#!/bin/sh' > gradlew
           echo 'exec java -classpath "$(dirname "$0")/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
           chmod +x gradlew
-          chmod +x gradle/wrapper/gradle-wrapper.jar
 
       - name: Create Root build.gradle
         run: |
@@ -63,7 +60,7 @@ jobs:
           }
           EOF
 
-      - name: Create settings.gradle
+      - name: Create settings.gradle (FIXED: Added JitPack)
         run: |
           cat > settings.gradle << 'EOF'
           pluginManagement {
@@ -78,6 +75,7 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
+                  maven { url 'https://jitpack.io' } // <-- این خط اضافه شد تا Xposed API پیدا شود
               }
           }
           rootProject.name = "WaterDroplets"
@@ -162,7 +160,6 @@ jobs:
 
       - name: Create strings.xml
         run: |
-          mkdir -p app/src/main/res/values
           cat > app/src/main/res/values/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
@@ -179,11 +176,12 @@ jobs:
           package com.waterdrop.module
           import android.os.Bundle
           import androidx.appcompat.app.AppCompatActivity
+          import android.widget.TextView
           class MainActivity : AppCompatActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  val tv = android.widget.TextView(this)
-                  tv.text = "Module Installed ✅\nEnable in LSPosed"
+                  val tv = TextView(this)
+                  tv.text = "Module Installed ✅\nEnable SystemUI in LSPosed"
                   tv.textSize = 18f
                   tv.setPadding(50, 50, 50, 50)
                   setContentView(tv)
@@ -235,7 +233,7 @@ jobs:
               override fun onDraw(canvas: Canvas) {
                   super.onDraw(canvas)
                   droplets.forEach { d ->
-                      paint.alpha = (d.opacity * 255).toInt()
+                      paint.alpha = (0.4f * 255).toInt()
                       canvas.drawCircle(d.x, d.y, d.radius, paint)
                       highlightPaint.alpha = 180
                       canvas.drawCircle(d.x - d.radius * 0.3f, d.y - d.radius * 0.3f, d.radius * 0.25f, highlightPaint)
@@ -265,7 +263,7 @@ jobs:
                   })
               }
           }
-          data class Droplet(var x: Float, var y: Float, val radius: Float, var speed: Float, val opacity: Float = 0.4f)
+          data class Droplet(var x: Float, var y: Float, val radius: Float, var speed: Float)
           EOF
 
       - name: Build APK

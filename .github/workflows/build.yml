@@ -21,9 +21,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-
       - name: Create directory structure
         run: |
           mkdir -p app/src/main/assets
@@ -41,9 +38,9 @@ jobs:
             exit 1
           fi
           cp MainHook.kt app/src/main/java/com/waterdrop/module/MainHook.kt
-          echo "✅ MainHook.kt copied from root"
+          echo "✅ MainHook.kt copied"
 
-      - name: Create gradle wrapper
+      - name: Create gradle-wrapper.properties
         run: |
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
           distributionBase=GRADLE_USER_HOME
@@ -54,6 +51,19 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           EOF
+
+      - name: Download gradle-wrapper.jar
+        run: |
+          curl -L -o gradle/wrapper/gradle-wrapper.jar \
+            "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar"
+
+      - name: Create gradlew script
+        run: |
+          cat > gradlew << 'GRADLEW'
+          #!/bin/sh
+          exec java -classpath "$(dirname "$0")/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
+          GRADLEW
+          chmod +x gradlew
 
       - name: Create build.gradle (root)
         run: |
@@ -310,6 +320,9 @@ jobs:
               private val random = Random(System.currentTimeMillis())
 
               init {
+                  setBackgroundColor(Color.TRANSPARENT)
+                  setWillNotDraw(false)
+
                   paint.style = Paint.Style.FILL
                   paint.color = Color.argb(50, 180, 220, 255)
 
@@ -319,8 +332,6 @@ jobs:
                   borderPaint.style = Paint.Style.STROKE
                   borderPaint.color = Color.argb(100, 100, 140, 180)
                   borderPaint.strokeWidth = 1.5f
-
-                  setWillNotDraw(false)
               }
 
               override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -330,8 +341,7 @@ jobs:
 
               private fun initDroplets(w: Int, h: Int) {
                   droplets.clear()
-                  val count = 120
-                  repeat(count) {
+                  repeat(80) {
                       droplets.add(createDroplet(w, h, random.nextFloat() * h))
                   }
               }
@@ -340,8 +350,8 @@ jobs:
                   return Droplet(
                       x = random.nextFloat() * w,
                       y = startY,
-                      radius = random.nextFloat() * 14f + 3f,
-                      speed = random.nextFloat() * 2f + 0.3f,
+                      radius = random.nextFloat() * 10f + 3f,
+                      speed = random.nextFloat() * 1.5f + 0.3f,
                       opacity = random.nextFloat() * 0.4f + 0.2f,
                       wobble = random.nextFloat() * 0.5f
                   )
@@ -349,33 +359,20 @@ jobs:
 
               override fun onDraw(canvas: Canvas) {
                   super.onDraw(canvas)
-
-                  trails.forEach { trail ->
-                      drawTrail(canvas, trail)
-                  }
-
-                  droplets.forEach { droplet ->
-                      drawDroplet(canvas, droplet)
-                  }
+                  trails.forEach { drawTrail(canvas, it) }
+                  droplets.forEach { drawDroplet(canvas, it) }
               }
 
               private fun drawDroplet(canvas: Canvas, d: Droplet) {
-                  val x = d.x
-                  val y = d.y
-                  val r = d.radius
+                  val x = d.x; val y = d.y; val r = d.radius
 
                   paint.alpha = (d.opacity * 255).toInt()
                   canvas.drawCircle(x, y, r, paint)
 
                   val gradient = RadialGradient(
-                      x - r * 0.3f, y - r * 0.3f,
-                      r * 0.8f,
-                      intArrayOf(
-                          Color.argb(80, 255, 255, 255),
-                          Color.argb(20, 100, 150, 200)
-                      ),
-                      null,
-                      Shader.TileMode.CLAMP
+                      x - r * 0.3f, y - r * 0.3f, r * 0.8f,
+                      intArrayOf(Color.argb(80, 255, 255, 255), Color.argb(20, 100, 150, 200)),
+                      null, Shader.TileMode.CLAMP
                   )
                   paint.shader = gradient
                   canvas.drawCircle(x, y, r, paint)
@@ -399,45 +396,38 @@ jobs:
               fun startAnimation() {
                   handler.post(object : Runnable {
                       override fun run() {
-                          updateDroplets()
-                          invalidate()
-                          handler.postDelayed(this, 16)
+                          try {
+                              updateDroplets()
+                              invalidate()
+                              handler.postDelayed(this, 16)
+                          } catch (e: Throwable) {
+                              handler.removeCallbacksAndMessages(null)
+                          }
                       }
                   })
               }
 
               private fun updateDroplets() {
-                  val w = width.toFloat()
-                  val h = height.toFloat()
+                  val w = width.toFloat(); val h = height.toFloat()
 
                   droplets.forEach { d ->
                       d.y += d.speed
                       d.x += sin(d.y * 0.02f).toFloat() * d.wobble
 
                       if (d.speed > 1.2f && random.nextFloat() > 0.7f) {
-                          trails.add(
-                              Trail(
-                                  x = d.x + (random.nextFloat() - 0.5f) * 2,
-                                  y = d.y - d.radius,
-                                  radius = d.radius * 0.4f,
-                                  opacity = d.opacity * 0.5f
-                              )
-                          )
+                          trails.add(Trail(d.x + (random.nextFloat() - 0.5f) * 2, d.y - d.radius, d.radius * 0.4f, d.opacity * 0.5f))
                       }
 
                       if (d.y - d.radius > h) {
                           d.y = -d.radius
                           d.x = random.nextFloat() * w
-                          d.speed = random.nextFloat() * 2f + 0.3f
+                          d.speed = random.nextFloat() * 1.5f + 0.3f
                       }
                   }
 
                   trails.forEach { it.opacity -= 0.01f }
                   trails.removeAll { it.opacity <= 0 }
-
-                  if (trails.size > 200) {
-                      trails.subList(0, trails.size - 200).clear()
-                  }
+                  if (trails.size > 150) trails.subList(0, trails.size - 150).clear()
               }
 
               override fun onDetachedFromWindow() {
@@ -446,21 +436,8 @@ jobs:
               }
           }
 
-          data class Droplet(
-              var x: Float,
-              var y: Float,
-              val radius: Float,
-              var speed: Float,
-              val opacity: Float,
-              val wobble: Float
-          )
-
-          data class Trail(
-              val x: Float,
-              val y: Float,
-              val radius: Float,
-              var opacity: Float
-          )
+          data class Droplet(var x: Float, var y: Float, val radius: Float, var speed: Float, val opacity: Float, val wobble: Float)
+          data class Trail(val x: Float, val y: Float, val radius: Float, var opacity: Float)
           EOF
 
       - name: Create MainActivity.kt
@@ -479,25 +456,18 @@ jobs:
           }
           EOF
 
+      - name: Verify structure
+        run: |
+          echo "📁 Structure:"
+          find . -type f -not -path './.git/*' | sort
+
       - name: Build Debug APK
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WaterDroplets-APK
+          name: WaterDroplets-Debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
-
-      - name: Build Release APK
-        run: |
-          ./gradlew assembleRelease --no-daemon
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: WaterDroplets-Release-APK
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30

@@ -1,0 +1,470 @@
+name: Build WaterDropletsModule
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'MainHook.kt'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build-project:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create directory structure
+        run: |
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/java/com/waterdrop/module
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+
+      - name: Copy MainHook.kt from root
+        run: |
+          if [ ! -f "MainHook.kt" ]; then
+            echo "❌ MainHook.kt not found in root!"
+            exit 1
+          fi
+          cp MainHook.kt app/src/main/java/com/waterdrop/module/MainHook.kt
+          echo "✅ MainHook.kt copied from root"
+
+      - name: Create build.gradle (root)
+        run: |
+          cat > build.gradle << 'EOF'
+          buildscript {
+              ext.kotlin_version = '1.9.22'
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.2.2'
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+              }
+          }
+
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          tasks.register('clean', Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+      - name: Create settings.gradle
+        run: |
+          cat > settings.gradle << 'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "WaterDropletsModule"
+          include ':app'
+          EOF
+
+      - name: Create gradle.properties
+        run: |
+          cat > gradle.properties << 'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+      - name: Create app/build.gradle
+        run: |
+          cat > app/build.gradle << 'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.waterdrop.module'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.waterdrop.module"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              compileOnly 'de.robv.android.xposed:api:82'
+              compileOnly 'de.robv.android.xposed:api:82:sources'
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+          }
+          EOF
+
+      - name: Create proguard-rules.pro
+        run: |
+          touch app/proguard-rules.pro
+
+      - name: Create AndroidManifest.xml
+        run: |
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.WaterDrop">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <meta-data
+                      android:name="xposedmodule"
+                      android:value="true" />
+                  <meta-data
+                      android:name="xposeddescription"
+                      android:value="Water Droplets on Lock Screen" />
+                  <meta-data
+                      android:name="xposedminversion"
+                      android:value="93" />
+                  <meta-data
+                      android:name="xposedscope"
+                      android:resource="@array/xposed_scope" />
+
+              </application>
+
+          </manifest>
+          EOF
+
+      - name: Create xposed_init
+        run: |
+          echo "com.waterdrop.module.MainHook" > app/src/main/assets/xposed_init
+
+      - name: Create strings.xml
+        run: |
+          cat > app/src/main/res/values/strings.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">Water Droplets</string>
+              <string-array name="xposed_scope">
+                  <item>com.android.systemui</item>
+              </string-array>
+          </resources>
+          EOF
+
+      - name: Create themes.xml
+        run: |
+          cat > app/src/main/res/values/themes.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.WaterDrop" parent="Theme.Material3.DayNight.NoActionBar">
+                  <item name="colorPrimary">#2196F3</item>
+                  <item name="colorPrimaryDark">#1976D2</item>
+                  <item name="colorAccent">#03A9F4</item>
+              </style>
+          </resources>
+          EOF
+
+      - name: Create activity_main.xml
+        run: |
+          cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:gravity="center"
+              android:orientation="vertical"
+              android:padding="32dp">
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="💧 Water Droplets Module"
+                  android:textSize="22sp"
+                  android:textStyle="bold" />
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="16dp"
+                  android:text="Module Active ✅"
+                  android:textSize="16sp" />
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="8dp"
+                  android:text="Enable SystemUI in LSPosed"
+                  android:textSize="14sp"
+                  android:textColor="#888888" />
+
+          </LinearLayout>
+          EOF
+
+      - name: Create ic_water.xml
+        run: |
+          cat > app/src/main/res/drawable/ic_water.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#2196F3"
+                  android:pathData="M12,2c0,0 -8,9 -8,14c0,4.4 3.6,8 8,8s8,-3.6 8,-8C20,11 12,2 12,2z"/>
+          </vector>
+          EOF
+
+      - name: Create WaterDropOverlay.kt
+        run: |
+          cat > app/src/main/java/com/waterdrop/module/WaterDropOverlay.kt << 'EOF'
+          package com.waterdrop.module
+
+          import android.content.Context
+          import android.graphics.*
+          import android.os.Handler
+          import android.os.Looper
+          import android.view.View
+          import kotlin.math.sin
+          import kotlin.random.Random
+
+          class WaterDropOverlay(context: Context) : View(context) {
+
+              private val droplets = mutableListOf<Droplet>()
+              private val trails = mutableListOf<Trail>()
+              private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+              private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+              private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+              private val handler = Handler(Looper.getMainLooper())
+              private val random = Random(System.currentTimeMillis())
+
+              init {
+                  paint.style = Paint.Style.FILL
+                  paint.color = Color.argb(50, 180, 220, 255)
+
+                  highlightPaint.style = Paint.Style.FILL
+                  highlightPaint.color = Color.argb(220, 255, 255, 255)
+
+                  borderPaint.style = Paint.Style.STROKE
+                  borderPaint.color = Color.argb(100, 100, 140, 180)
+                  borderPaint.strokeWidth = 1.5f
+
+                  setWillNotDraw(false)
+              }
+
+              override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+                  super.onSizeChanged(w, h, oldw, oldh)
+                  initDroplets(w, h)
+              }
+
+              private fun initDroplets(w: Int, h: Int) {
+                  droplets.clear()
+                  val count = 120
+                  repeat(count) {
+                      droplets.add(createDroplet(w, h, random.nextFloat() * h))
+                  }
+              }
+
+              private fun createDroplet(w: Int, h: Int, startY: Float = 0f): Droplet {
+                  return Droplet(
+                      x = random.nextFloat() * w,
+                      y = startY,
+                      radius = random.nextFloat() * 14f + 3f,
+                      speed = random.nextFloat() * 2f + 0.3f,
+                      opacity = random.nextFloat() * 0.4f + 0.2f,
+                      wobble = random.nextFloat() * 0.5f
+                  )
+              }
+
+              override fun onDraw(canvas: Canvas) {
+                  super.onDraw(canvas)
+
+                  trails.forEach { trail ->
+                      drawTrail(canvas, trail)
+                  }
+
+                  droplets.forEach { droplet ->
+                      drawDroplet(canvas, droplet)
+                  }
+              }
+
+              private fun drawDroplet(canvas: Canvas, d: Droplet) {
+                  val x = d.x
+                  val y = d.y
+                  val r = d.radius
+
+                  paint.alpha = (d.opacity * 255).toInt()
+                  canvas.drawCircle(x, y, r, paint)
+
+                  val gradient = RadialGradient(
+                      x - r * 0.3f, y - r * 0.3f,
+                      r * 0.8f,
+                      intArrayOf(
+                          Color.argb(80, 255, 255, 255),
+                          Color.argb(20, 100, 150, 200)
+                      ),
+                      null,
+                      Shader.TileMode.CLAMP
+                  )
+                  paint.shader = gradient
+                  canvas.drawCircle(x, y, r, paint)
+                  paint.shader = null
+
+                  highlightPaint.alpha = 230
+                  canvas.drawCircle(x - r * 0.35f, y - r * 0.35f, r * 0.22f, highlightPaint)
+
+                  highlightPaint.alpha = 120
+                  canvas.drawCircle(x + r * 0.3f, y + r * 0.4f, r * 0.1f, highlightPaint)
+
+                  borderPaint.alpha = (d.opacity * 180).toInt()
+                  canvas.drawCircle(x, y, r, borderPaint)
+              }
+
+              private fun drawTrail(canvas: Canvas, trail: Trail) {
+                  paint.alpha = (trail.opacity * 255).toInt()
+                  canvas.drawCircle(trail.x, trail.y, trail.radius, paint)
+              }
+
+              fun startAnimation() {
+                  handler.post(object : Runnable {
+                      override fun run() {
+                          updateDroplets()
+                          invalidate()
+                          handler.postDelayed(this, 16)
+                      }
+                  })
+              }
+
+              private fun updateDroplets() {
+                  val w = width.toFloat()
+                  val h = height.toFloat()
+
+                  droplets.forEach { d ->
+                      d.y += d.speed
+                      d.x += sin(d.y * 0.02f).toFloat() * d.wobble
+
+                      if (d.speed > 1.2f && random.nextFloat() > 0.7f) {
+                          trails.add(
+                              Trail(
+                                  x = d.x + (random.nextFloat() - 0.5f) * 2,
+                                  y = d.y - d.radius,
+                                  radius = d.radius * 0.4f,
+                                  opacity = d.opacity * 0.5f
+                              )
+                          )
+                      }
+
+                      if (d.y - d.radius > h) {
+                          d.y = -d.radius
+                          d.x = random.nextFloat() * w
+                          d.speed = random.nextFloat() * 2f + 0.3f
+                      }
+                  }
+
+                  trails.forEach { it.opacity -= 0.01f }
+                  trails.removeAll { it.opacity <= 0 }
+
+                  if (trails.size > 200) {
+                      trails.subList(0, trails.size - 200).clear()
+                  }
+              }
+
+              override fun onDetachedFromWindow() {
+                  super.onDetachedFromWindow()
+                  handler.removeCallbacksAndMessages(null)
+              }
+          }
+
+          data class Droplet(
+              var x: Float,
+              var y: Float,
+              val radius: Float,
+              var speed: Float,
+              val opacity: Float,
+              val wobble: Float
+          )
+
+          data class Trail(
+              val x: Float,
+              val y: Float,
+              val radius: Float,
+              var opacity: Float
+          )
+          EOF
+
+      - name: Create MainActivity.kt
+        run: |
+          cat > app/src/main/java/com/waterdrop/module/MainActivity.kt << 'EOF'
+          package com.waterdrop.module
+
+          import android.os.Bundle
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+              }
+          }
+          EOF
+
+      - name: Verify structure
+        run: |
+          echo "📁 Project structure:"
+          find . -type f -not -path './.git/*' | sort
+
+      - name: Upload project as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaterDropletsModule-Source
+          path: |
+            build.gradle
+            settings.gradle
+            gradle.properties
+            app/
+          retention-days: 30
